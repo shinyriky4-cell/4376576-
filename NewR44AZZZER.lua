@@ -1,12 +1,13 @@
 -- ═══════════════════════════════════════════════════════════════════════
---  RAZER v6.4 — Full build + DeleteThemeTab
---  Tabs: Main · Player · Settings · Themes
---  DeleteThemeTab() removes the Themes tab at runtime.
+--  RAZER v6.5 — Themes-only build
+--  Tabs: Themes
+--  DeleteThemeTab() removes it. RestoreThemeTab() rebuilds it.
 --  Obfuscate this file with Moonveil. Do NOT edit the obfuscated output.
 -- ═══════════════════════════════════════════════════════════════════════
 
+print("[Razer] Boot...")
+
 local _runOK, _runErr = xpcall(function()
-    print("[Razer] Boot...")
 
     local HttpService = game:GetService("HttpService")
     local F
@@ -28,7 +29,7 @@ local LP = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 Lib.CONFIG = {
-    Title = "Razer", Version = "6.4",
+    Title = "Razer", Version = "6.5",
     LogoURL = "https://files.catbox.moe/8zmj3s.png",
     LogoFallback = "rbxassetid://6034684930",
     DefaultTheme = "MinimalisticWhite",
@@ -2217,7 +2218,7 @@ function SH.build()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
---  SH.createTab — now with :Destroy() for runtime removal
+--  SH.createTab — every tab exposes :Destroy()
 -- ═══════════════════════════════════════════════════════════════════════
 function SH.createTab(name)
     local pill = U.create("TextButton", {
@@ -2317,7 +2318,9 @@ function SH.createTab(name)
     local function activate()
         if tab._destroyed then return end
         if Razer.ActiveTab == tab then return end
-        if Razer.ActiveTab then Razer.ActiveTab._setActive(false) end
+        if Razer.ActiveTab and not Razer.ActiveTab._destroyed then
+            Razer.ActiveTab._setActive(false)
+        end
         Razer.ActiveTab = tab
         tab._setActive(true)
         tab.onActivated()
@@ -2328,11 +2331,6 @@ function SH.createTab(name)
     pill.MouseButton1Click:Connect(activate)
     side.MouseButton1Click:Connect(activate)
 
-    -- ── tab:Destroy() ─────────────────────────────────────────────
-    -- Removes this tab from the shell entirely: pill, side button,
-    -- content scroll frame. If it was the active tab, switches to
-    -- another live tab (or leaves ActiveTab = nil if none remain).
-    -- Idempotent — safe to call repeatedly.
     function tab.Destroy()
         if tab._destroyed then return false end
         tab._destroyed = true
@@ -2365,21 +2363,6 @@ function Lib.Cleanup()
 
     pcall(function() SaveData.save() end)
 
-    pcall(function()
-        if Lib.Features and Lib.Features.SetFly then
-            Lib.Features.SetFly(false)
-        end
-    end)
-
-    local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-    if hum then
-        pcall(function()
-            hum.WalkSpeed = 16
-            hum.UseJumpPower = true
-            hum.JumpPower = 50
-        end)
-    end
-
     pcall(U.disconnectAll)
     if Razer._Blur then pcall(function() Razer._Blur:Destroy() end) end
     pcall(function() SH.ScreenGui:Destroy() end)
@@ -2393,21 +2376,6 @@ Lib.Shell = SH
 
 --[(7) FEATURES]--
 F = {}
-
-function F.SetSpeed(v)
-    Razer.Saved.walkSpeed = v
-    local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-    if hum then hum.WalkSpeed = v end
-end
-
-function F.SetJump(v)
-    Razer.Saved.jumpPower = v
-    local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.UseJumpPower = true
-        hum.JumpPower = v
-    end
-end
 
 function F.applyThemeCustoms(name)
     local raw = RawThemes[name]
@@ -2439,50 +2407,6 @@ function F.refreshCustoms()
     end
 end
 
-do
-    local flying, bv, bg, flyConn, flySpeed = false, nil, nil, nil, 50
-    local function startFly()
-        local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        flying = true
-        bv = Instance.new("BodyVelocity")
-        bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-        bv.Velocity = Vector3.zero
-        bv.Parent = hrp
-        bg = Instance.new("BodyGyro")
-        bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-        bg.P = 1000
-        bg.Parent = hrp
-        flyConn = RunService.Heartbeat:Connect(function()
-            if not flying then return end
-            local dir = Vector3.zero
-            local cam = Camera.CFrame
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += cam.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= cam.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= cam.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += cam.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0, 1, 0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0, 1, 0) end
-            bv.Velocity = dir.Magnitude > 0 and dir.Unit * flySpeed or Vector3.zero
-            bg.CFrame = cam
-        end)
-    end
-    local function stopFly()
-        flying = false
-        if flyConn then flyConn:Disconnect() end
-        if bv then bv:Destroy() end
-        if bg then bg:Destroy() end
-    end
-    function F.SetFly(on) if on then startFly() else stopFly() end end
-    function F.SetFlySpeed(v) flySpeed = v end
-end
-
-LP.CharacterAdded:Connect(function()
-    task.wait(0.6)
-    if Razer.Saved.jumpPower then F.SetJump(Razer.Saved.jumpPower) end
-    if Razer.Saved.walkSpeed then F.SetSpeed(Razer.Saved.walkSpeed) end
-end)
-
 function F.setBackgroundMode(mode)
     Themes.bgMode = mode
     local BgLogo = SH.BgLogo
@@ -2505,183 +2429,12 @@ Lib.Features = F
 SH.build()
 
 -- ═══════════════════════════════════════════════════════════════════════
---  BUILD TABS + FEATURES
+--  BUILD — Themes tab only
 -- ═══════════════════════════════════════════════════════════════════════
 
-local mainTab     = SH.createTab("Main")
-local playerTab   = SH.createTab("Player")
-local settingsTab = SH.createTab("Settings")
-local themesTab   = SH.createTab("Themes")
-
--- Keep a reference so DeleteThemeTab can find it even after other tabs
--- are added/removed.
+local themesTab = SH.createTab("Themes")
 Razer.ThemesTab = themesTab
 
--- ── MAIN TAB ─────────────────────────────────────────────────────────
-local movement = mainTab:CreateSection("MOVEMENT")
-
-movement:CreateToggle("Fly", {
-    default = false,
-    callback = function(on) F.SetFly(on) end })
-
-movement:CreateSlider("Fly Speed", {
-    min = 10, max = 300, default = 50,
-    callback = function(v) F.SetFlySpeed(v) end })
-
-movement:CreateSlider("Speed", {
-    min = 16, max = 200, default = 16,
-    callback = function(v) F.SetSpeed(v) end })
-
-movement:CreateInput("Walk Speed", {
-    default = 16, min = 1, max = 500, integer = true,
-    callback = function(v) F.SetSpeed(v) end })
-
-movement:CreateInput("Jump Power", {
-    default = 50, min = 1, max = 500, integer = true,
-    callback = function(v) F.SetJump(v) end })
-
-local visual = mainTab:CreateSection("VISUAL")
-local esp = visual:CreateDropdown("ESP", { default = false })
-esp:CreateToggle("Enable ESP", { default = false, callback = function() end })
-esp:CreateSlider("Text Size", { min = 8, max = 24, default = 14, callback = function() end })
-esp:CreateInput("Max Distance", { default = 500, min = 50, max = 5000, integer = true })
-
--- ── PLAYER TAB ───────────────────────────────────────────────────────
-local character = playerTab:CreateSection("CHARACTER")
-
-character:CreateSlider("WalkSpeed", {
-    min = 8, max = 300, default = 16,
-    callback = function(v)
-        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.WalkSpeed = v end
-    end })
-
-character:CreateSlider("JumpPower", {
-    min = 20, max = 300, default = 50,
-    callback = function(v)
-        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.UseJumpPower = true
-            hum.JumpPower = v
-        end
-    end })
-
-character:CreateInput("Max Health", {
-    default = 100, min = 1, max = 10000, integer = true,
-    callback = function(v)
-        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.MaxHealth = v
-            hum.Health = v
-        end
-    end })
-
-local utility = playerTab:CreateSection("UTILITY")
-
-utility:CreateToggle("Infinite Jump", {
-    default = false,
-    callback = function(on)
-        if on then
-            utility._infJump = true
-            U.track(UserInputService.JumpRequest:Connect(function()
-                if utility._infJump then
-                    local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-                    if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-                end
-            end))
-        else
-            utility._infJump = false
-        end
-    end })
-
--- ── SETTINGS TAB ─────────────────────────────────────────────────────
-local appearance = settingsTab:CreateSection("APPEARANCE")
-
-appearance:CreateToggle("Dark Mode", {
-    default = false,
-    callback = function(on)
-        Themes:Apply(on and "Dark" or "Light")
-        if Themes.bgMode ~= "none" then F.setBackgroundMode(Themes.bgMode) end
-        Lib.Notify({ text = (on and "Dark" or "Light") .. " mode", duration = 2 })
-    end })
-
-appearance:CreateToggle("Show Title", {
-    default = true,
-    callback = function(on) SH.setTitleVisible(on) end })
-
-local layoutSec = settingsTab:CreateSection("LAYOUT")
-
-layoutSec:CreateToggle("SidePanel (LeftColumn)", {
-    default = false,
-    callback = function(on)
-        SH.setLayout(on and "LeftColumn" or "TopColumn")
-        Lib.Notify({ text = "Layout: " .. (on and "LeftColumn" or "TopColumn"), duration = 2 })
-    end })
-
-layoutSec:CreateSlider("Opacity", {
-    min = 30, max = 100, default = 100,
-    callback = function(v) SH.Main.BackgroundTransparency = 1 - v / 100 end })
-
-layoutSec:CreateSlider("UI Scale", {
-    min = 70, max = 130, default = 100,
-    callback = function(v)
-        SH._targetScale = v / 100
-        if SH.MainScale then
-            U.tween(SH.MainScale, 0.15, { Scale = SH._targetScale })
-        end
-    end })
-
-local statsSec = settingsTab:CreateSection("STATISTICS")
-
-statsSec:CreateToggle("Statistics Overlay", {
-    default = false,
-    callback = function(on)
-        Lib.SetStats(on)
-        Lib.Notify({ text = "Statistics: " .. (on and "ON" or "OFF"), duration = 2 })
-    end })
-
-local colors = settingsTab:CreateSection("COLORS")
-
-colors:CreateColorPicker("Slider Color", {
-    default = CONFIG.PurpleDefault,
-    callback = function(c)
-        Razer.Custom.slider = c
-        for _, s in ipairs(Razer.SliderReg) do
-            if s.fill and s.fill.Parent then
-                U.tween(s.fill, 0.2, { BackgroundColor3 = c })
-                U.tween(s.valLbl, 0.2, { TextColor3 = c })
-            end
-        end
-    end })
-
-colors:CreateColorPicker("Tab Color", {
-    default = CONFIG.PurpleDefault,
-    callback = function(c)
-        Razer.Custom.tab = c
-        for _, t in pairs(Razer.Tabs) do
-            if t._setActive then t._setActive(Razer.ActiveTab == t) end
-        end
-    end })
-
-colors:CreateColorPicker("Toggle Color", {
-    default = CONFIG.PurpleDefault,
-    callback = function(c)
-        Razer.Custom.toggle = c
-        for _, t in ipairs(Razer.ToggleReg) do
-            if t.box and t.box.Parent and t.refresh then t.refresh() end
-        end
-    end })
-
-colors:CreateColorPicker("Title Accent", {
-    default = CONFIG.PurpleDefault,
-    callback = function(c)
-        Razer.Custom.title = c
-        if SH.TitleAccent then
-            U.tween(SH.TitleAccent, 0.28, { BackgroundColor3 = c })
-        end
-    end })
-
--- ── THEMES TAB ───────────────────────────────────────────────────────
 themesTab:CreateSection("THEME PRESETS")
 
 local function themeCard(name, colors, onApply)
@@ -2745,15 +2498,12 @@ themeCard("Green", Themes.Raw.Green, function() Lib.CallAMT("Green") end)
 themeCard("Minimalistic Black", Themes.Raw.MinimalisticBlack, function() Lib.CallAMT("MinimalisticBlack") end)
 themeCard("Minimalistic White", Themes.Raw.MinimalisticWhite, function() Lib.CallAMT("MinimalisticWhite") end)
 
-Razer.ActiveTab = mainTab
-mainTab._setActive(true)
-mainTab.onActivated()
+Razer.ActiveTab = themesTab
+themesTab._setActive(true)
+themesTab.onActivated()
 
 -- ═══════════════════════════════════════════════════════════════════════
---  DeleteThemeTab — removes the Themes tab at runtime
---  Usage: DeleteThemeTab()
---  Returns true on success, false if already deleted.
---  If Themes was the active tab, switches to another live tab.
+--  DeleteThemeTab / RestoreThemeTab
 -- ═══════════════════════════════════════════════════════════════════════
 
 function Lib.DeleteThemeTab()
@@ -2763,8 +2513,6 @@ function Lib.DeleteThemeTab()
 end
 
 function Lib.RestoreThemeTab()
-    -- Rebuilds the Themes tab if it was deleted. Cheap: tears down any
-    -- existing one first, then re-runs the same construction as above.
     if Razer.ThemesTab and not Razer.ThemesTab._destroyed then return false end
 
     local t = SH.createTab("Themes")
@@ -2784,3 +2532,377 @@ function Lib.RestoreThemeTab()
         U.pressPulse(row)
 
         local swatches = { colors.bg, colors.surfaceAlt, colors.accent, colors.toggleOn }
+        for i, sw in ipairs(swatches) do
+            local f = U.create("Frame", {
+                Position = UDim2.fromOffset(10 + (i - 1) * 22, 14),
+                Size = UDim2.fromOffset(18, 20),
+                BackgroundColor3 = sw, BorderSizePixel = 0, Parent = row })
+            U.corner(f, 4)
+        end
+
+        U.create("TextLabel", {
+            Position = UDim2.fromOffset(10 + 4 * 22 + 8, 0),
+            Size = UDim2.new(1, -10 - 4 * 22 - 20, 1, 0),
+            BackgroundTransparency = 1, Font = Enum.Font.GothamBold,
+            Text = name, TextSize = 14, TextColor3 = colors.text,
+            TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+
+        if colors.bgImage then
+            local imgChip = U.create("ImageLabel", {
+                AnchorPoint = Vector2.new(1, 0.5),
+                Position = UDim2.new(1, -12, 0.5, 0),
+                Size = UDim2.fromOffset(60, 34),
+                BackgroundTransparency = 0.2,
+                BackgroundColor3 = colors.surfaceAlt,
+                Image = "",
+                ScaleType = Enum.ScaleType.Crop,
+                Parent = row,
+            })
+            U.corner(imgChip, 6)
+            task.spawn(function()
+                local cached = Lib.AssetLoader.load(colors.bgImage, "chip_" .. name)
+                if cached then imgChip.Image = cached end
+            end)
+        end
+
+        row.MouseButton1Click:Connect(function()
+            onApply()
+            SaveData.queue()
+        end)
+    end
+
+    card("Default White", Themes.Raw.Light, function() Lib.CallAMT("Light") end)
+    card("Dark Background", Themes.Raw.Dark, function() Lib.CallAMT("Dark") end)
+    card("Razer White", Themes.Raw.RazerWhite, function() Lib.CallAMT("RazerWhite") end)
+    card("Razer Black", Themes.Raw.RazerBlack, function() Lib.CallAMT("RazerBlack") end)
+    card("Galaxy", Themes.Raw.Galaxy, function() Lib.CallAMT("Galaxy") end)
+    card("Water", Themes.Raw.Water, function() Lib.CallAMT("Water") end)
+    card("Green", Themes.Raw.Green, function() Lib.CallAMT("Green") end)
+    card("Minimalistic Black", Themes.Raw.MinimalisticBlack, function() Lib.CallAMT("MinimalisticBlack") end)
+    card("Minimalistic White", Themes.Raw.MinimalisticWhite, function() Lib.CallAMT("MinimalisticWhite") end)
+
+    return true
+end
+
+-- ═══════════════════════════════════════════════════════════════════════
+--  PUBLIC CONFIG API
+-- ═══════════════════════════════════════════════════════════════════════
+
+Lib.DefaultConfig = { tabs = {} }
+
+function Lib.WithDefaults(cfg)
+    if type(cfg) ~= "table" then cfg = {} end
+    if type(cfg.tabs) ~= "table" then cfg.tabs = Lib.DefaultConfig.tabs end
+    return cfg
+end
+
+function Lib.LoadConfigFromURL(url)
+    if type(url) ~= "string" or url == "" then return Lib.DefaultConfig end
+    local body = A.httpFetch(url)
+    if type(body) ~= "string" or #body < 2 then return Lib.DefaultConfig end
+    local ok, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+    if not ok or type(decoded) ~= "table" then return Lib.DefaultConfig end
+    return Lib.WithDefaults(decoded)
+end
+
+function Lib.CallAMT(themeName)
+    if type(themeName) ~= "string" then return false end
+    if not RawThemes[themeName] then return false end
+
+    pcall(F.applyThemeCustoms, themeName)
+    pcall(Themes.Apply, Themes, themeName)
+
+    if themeName == "RazerWhite" then
+        pcall(F.setBackgroundMode, "razer_white")
+    elseif themeName == "RazerBlack" then
+        pcall(F.setBackgroundMode, "razer_black")
+    else
+        pcall(F.setBackgroundMode, "none")
+    end
+
+    pcall(SH.applyThemeBackground, themeName)
+    pcall(SaveData.queue)
+    return true
+end
+
+Lib.CallAlreadyMadeThemes = Lib.CallAMT
+
+function Lib.ThemeList()
+    local out = {}
+    for name in pairs(RawThemes) do table.insert(out, name) end
+    table.sort(out)
+    return out
+end
+
+Lib.BuiltinThemes = {
+    Light=true, Dark=true, RazerWhite=true, RazerBlack=true,
+    Galaxy=true, Water=true, Green=true,
+    MinimalisticBlack=true, MinimalisticWhite=true,
+}
+
+function Lib.MakeTheme(name, def, applyNow)
+    if type(name) ~= "string" or name == "" then return false end
+    if type(def) ~= "table" then return false end
+    if Lib.BuiltinThemes[name] then return false end
+
+    local function col(v, fallback)
+        if typeof(v) == "Color3" then return v end
+        if type(v) == "string" then
+            local c = U.parseHex(v)
+            if c then return c end
+        end
+        return fallback
+    end
+
+    local bg         = col(def.bg, h"#16161A")
+    local surface    = col(def.surface, bg:Lerp(Color3.new(1,1,1), 0.06))
+    local surfaceAlt = col(def.surfaceAlt, bg:Lerp(Color3.new(1,1,1), 0.12))
+    local accent     = col(def.accent, h"#A020F0")
+    local text       = col(def.text, Color3.fromRGB(240, 240, 245))
+    local subtext    = col(def.subtext, text:Lerp(bg, 0.45))
+    local border     = col(def.border, bg:Lerp(Color3.new(1,1,1), 0.15))
+    local toggleOn   = col(def.toggleOn,  accent)
+    local toggleOff  = col(def.toggleOff, surfaceAlt)
+    local separator  = col(def.separator, border)
+    local success    = col(def.success, h"#00D97A")
+    local errCol     = col(def.error,   h"#FF4C4C")
+    local icon       = col(def.icon,    text)
+    local notifBg    = col(def.notifBg, surface)
+
+    RawThemes[name] = {
+        bg = bg, surface = surface, surfaceAlt = surfaceAlt,
+        accent = accent, text = text, subtext = subtext,
+        border = border, toggleOn = toggleOn, toggleOff = toggleOff,
+        separator = separator, success = success, error = errCol,
+        icon = icon, notifBg = notifBg,
+
+        bgImage      = def.bgImage or def.bgURL,
+        titleColor   = typeof(def.titleColor) == "Color3" and def.titleColor or nil,
+        minimizeText = typeof(def.minimizeText) == "Color3" and def.minimizeText or nil,
+
+        sliderColor = col(def.sliderColor, accent),
+        toggleColor = col(def.toggleColor, toggleOn),
+        tabColor    = col(def.tabColor,    accent),
+        titleAccentColor = col(def.titleAccentColor, accent),
+
+        _custom = true,
+    }
+
+    if applyNow then pcall(Lib.CallAMT, name) end
+    return true
+end
+
+function Lib.RemoveTheme(name)
+    if type(name) ~= "string" then return false end
+    if Lib.BuiltinThemes[name] then return false end
+    local t = RawThemes[name]
+    if not t or not t._custom then return false end
+    RawThemes[name] = nil
+    return true
+end
+
+function Lib.HasTheme(name)
+    return type(name) == "string" and RawThemes[name] ~= nil
+end
+
+function Lib.CustomThemeList()
+    local out = {}
+    for n, t in pairs(RawThemes) do
+        if t._custom then table.insert(out, n) end
+    end
+    table.sort(out)
+    return out
+end
+
+-- ═══════════════════════════════════════════════════════════════════════
+--  SAVE DATA
+-- ═══════════════════════════════════════════════════════════════════════
+
+SaveData._loading = false
+SaveData._queued = false
+
+function SaveData.available()
+    return hasWrite and hasRead and hasFile
+        and type(isfolder) == "function" and type(makefolder) == "function"
+end
+
+function SaveData.ensureDir()
+    if not SaveData.available() then return false end
+    if not isfolder(CONFIG.AssetFolder) then
+        local ok = pcall(makefolder, CONFIG.AssetFolder)
+        if not ok then return false end
+    end
+    return true
+end
+
+function SaveData.collect()
+    local data = { _v = 1 }
+    for _, t in ipairs(Razer.ToggleReg) do
+        if t.name and t.get then data["t_" .. t.name] = t.get() end
+    end
+    for _, s in ipairs(Razer.SliderReg) do
+        if s.name and s.get then data["s_" .. s.name] = s.get() end
+    end
+    for _, i in ipairs(Razer.InputReg) do
+        if i.name and i.get then data["i_" .. i.name] = i.get() end
+    end
+    for _, k in ipairs(Razer.KeybindReg) do
+        if k.name and k.get then
+            local key = k.get()
+            if key then data["k_" .. k.name] = key.Name end
+        end
+    end
+    data.theme  = Themes.current
+    data.layout = Razer.Layout
+    if Razer.Custom.slider then data.cSlider = U.toHex(Razer.Custom.slider) end
+    if Razer.Custom.toggle then data.cToggle = U.toHex(Razer.Custom.toggle) end
+    if Razer.Custom.tab    then data.cTab    = U.toHex(Razer.Custom.tab) end
+    if Razer.Custom.title  then data.cTitle  = U.toHex(Razer.Custom.title) end
+    return data
+end
+
+function SaveData.apply(data)
+    if type(data) ~= "table" then return end
+    SaveData._loading = true
+
+    for _, t in ipairs(Razer.ToggleReg) do
+        if t.name and t.set then
+            local v = data["t_" .. t.name]
+            if v ~= nil then pcall(t.set, v) end
+        end
+    end
+    for _, s in ipairs(Razer.SliderReg) do
+        if s.name and s.set then
+            local v = data["s_" .. s.name]
+            if v ~= nil then pcall(s.set, v) end
+        end
+    end
+    for _, i in ipairs(Razer.InputReg) do
+        if i.name and i.set then
+            local v = data["i_" .. i.name]
+            if v ~= nil then pcall(i.set, v) end
+        end
+    end
+    for _, k in ipairs(Razer.KeybindReg) do
+        if k.name and k.set then
+            local name = data["k_" .. k.name]
+            if type(name) == "string" then
+                local kc = Enum.KeyCode[name]
+                if kc then pcall(k.set, kc) end
+            end
+        end
+    end
+
+    if type(data.theme) == "string" and RawThemes[data.theme] then
+        pcall(Lib.CallAMT, data.theme)
+    end
+
+    if type(data.cSlider) == "string" then
+        local c = U.parseHex(data.cSlider); if c then Razer.Custom.slider = c end
+    end
+    if type(data.cToggle) == "string" then
+        local c = U.parseHex(data.cToggle); if c then Razer.Custom.toggle = c end
+    end
+    if type(data.cTab) == "string" then
+        local c = U.parseHex(data.cTab); if c then Razer.Custom.tab = c end
+    end
+    if type(data.cTitle) == "string" then
+        local c = U.parseHex(data.cTitle); if c then Razer.Custom.title = c end
+    end
+
+    pcall(F.refreshCustoms)
+
+    if data.layout == "LeftColumn" or data.layout == "TopColumn" then
+        pcall(SH.setLayout, data.layout)
+    end
+
+    SaveData._loading = false
+end
+
+function SaveData.save()
+    if not SaveData.available() then return end
+    if not SaveData.ensureDir() then return end
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(SaveData.collect())
+    end)
+    if not ok or type(encoded) ~= "string" then return end
+    pcall(writefile, CONFIG.SaveFile, encoded)
+end
+
+function SaveData.load()
+    if not SaveData.available() then return end
+    if not pcall(isfile, CONFIG.SaveFile) then return end
+    if not isfile(CONFIG.SaveFile) then return end
+    local ok, raw = pcall(readfile, CONFIG.SaveFile)
+    if not ok or type(raw) ~= "string" or #raw < 2 then return end
+    local ok2, decoded = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if ok2 and type(decoded) == "table" then
+        pcall(SaveData.apply, decoded)
+    end
+end
+
+function SaveData.queue()
+    if SaveData._loading then return end
+    if SaveData._queued then return end
+    SaveData._queued = true
+    task.delay(0.4, function()
+        SaveData._queued = false
+        SaveData.save()
+    end)
+end
+
+Lib.SaveData = SaveData
+
+F.applyThemeCustoms(CONFIG.DefaultTheme)
+SH.applyThemeBackground(CONFIG.DefaultTheme)
+F.setBackgroundMode("none")
+
+SaveData.load()
+
+-- ═══════════════════════════════════════════════════════════════════════
+
+SH.SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local q = SH.SearchBox.Text:lower():gsub("%s+", "")
+    local at = Razer.ActiveTab
+    if not at or not at.scroll then return end
+    for _, child in ipairs(at.scroll:GetChildren()) do
+        if child:IsA("Frame") and child.Name:match("Row$") then
+            local lbl = child:FindFirstChildOfClass("TextLabel")
+            local n = lbl and lbl.Text:lower():gsub("%s+", "") or ""
+            child.Visible = (q == "" or n:find(q, 1, true))
+        end
+    end
+end)
+
+pcall(function()
+    getgenv().Razer = Razer
+    getgenv().RazerLib = Lib
+    getgenv().RazerSaveData = SaveData
+    getgenv().CallAMT = Lib.CallAMT
+    getgenv().CallAlreadyMadeThemes = Lib.CallAMT
+    getgenv().MakeTheme = Lib.MakeTheme
+    getgenv().RemoveTheme = Lib.RemoveTheme
+    getgenv().HasTheme = Lib.HasTheme
+    getgenv().CustomThemeList = Lib.CustomThemeList
+    getgenv().LoadConfigFromURL = Lib.LoadConfigFromURL
+    getgenv().ThemeList = Lib.ThemeList
+    getgenv().DeleteThemeTab = Lib.DeleteThemeTab
+    getgenv().RestoreThemeTab = Lib.RestoreThemeTab
+end)
+
+task.delay(0.5, function()
+    Lib.Notify({ text = "Loaded. RightShift + Enter to toggle.", duration = 5 })
+end)
+
+    print("[Razer] Body finished OK.")
+end, function(err)
+    return tostring(err) .. "\n---- TRACEBACK ----\n" .. debug.traceback()
+end)
+
+if not _runOK then
+    warn("[Razer] FATAL:\n" .. tostring(_runErr))
+else
+    print("[Razer v6.5] Loaded. RightShift + Enter to toggle.")
+end
